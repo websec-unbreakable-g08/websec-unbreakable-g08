@@ -47,6 +47,7 @@
       "lastName": "Unbreakable",
       "email": "anna@unbreakable.example",
       "emailVerified": true,
+      "realmRoles": ["default-roles-unbreakable"],
       "credentials": [{ "type": "password", "value": "${ANNA_PASSWORD}", "temporary": false }]
     },
     {
@@ -56,6 +57,7 @@
       "lastName": "Unbreakable",
       "email": "bram@unbreakable.example",
       "emailVerified": true,
+      "realmRoles": ["default-roles-unbreakable"],
       "credentials": [{ "type": "password", "value": "${BRAM_PASSWORD}", "temporary": false }]
     },
     {
@@ -65,6 +67,7 @@
       "lastName": "Unbreakable",
       "email": "chris@unbreakable.example",
       "emailVerified": true,
+      "realmRoles": ["default-roles-unbreakable"],
       "credentials": [{ "type": "password", "value": "${CHRIS_PASSWORD}", "temporary": false }]
     }
   ]
