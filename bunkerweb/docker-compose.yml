@@ -28,6 +28,9 @@ services:
       - USE_REVERSE_PROXY=yes
       - REVERSE_PROXY_URL=/
       - REVERSE_PROXY_HOST=http://unbreakable-app-g08:8080
+      # Keycloak (identity provider) op hetzelfde domein onder /auth
+      - REVERSE_PROXY_URL_1=/auth
+      - REVERSE_PROXY_HOST_1=http://unbreakable-keycloak-g08:8080
       - AUTO_LETS_ENCRYPT=yes
       - EMAIL_LETS_ENCRYPT=soufiane.chaham@student.ap.be
       - USE_LETS_ENCRYPT_STAGING=no

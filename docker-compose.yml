@@ -25,6 +25,109 @@ services:
       - backend
     restart: unless-stopped
 
+  # Identity provider. Publiek bereikbaar onder /auth (via BunkerWeb op de server).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    container_name: unbreakable-keycloak-g08
+    command: start --import-realm
+    # Zonder limiet neemt de JVM tot 70% van al het geheugen van de machine als heap.
+    mem_limit: 1g
+    environment:
+      JAVA_OPTS_KC_HEAP: -XX:InitialRAMPercentage=25 -XX:MaxRAMPercentage=50
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://kc-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:?}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?}
+      # De issuer in elk token is deze publieke URL; de API haalt de sleutels intern op.
+      KC_HOSTNAME: ${KC_PUBLIC_URL:?}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded
+      # Ingevuld in keycloak/realm-unbreakable.json bij de import.
+      APP_URL: ${APP_URL:?}
+      ANNA_PASSWORD: ${ANNA_PASSWORD:?}
+      BRAM_PASSWORD: ${BRAM_PASSWORD:?}
+      CHRIS_PASSWORD: ${CHRIS_PASSWORD:?}
+    volumes:
+      - ./keycloak/realm-unbreakable.json:/opt/keycloak/data/import/realm-unbreakable.json:ro
+    expose:
+      - "8080"
+    networks:
+      - backend
+      - waf
+    depends_on:
+      kc-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  kc-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:?}
+    volumes:
+      - kcdata:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Policy decision point. Geen poorten naar buiten: enkel de app praat ermee, met een preshared key.
+  openfga:
+    image: openfga/openfga:v1.22.1
+    command: run
+    environment: &fga-env
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://fga-db:5432/openfga?sslmode=disable
+      OPENFGA_DATASTORE_USERNAME: openfga
+      OPENFGA_DATASTORE_PASSWORD: ${FGA_DB_PASSWORD:?}
+      OPENFGA_AUTHN_METHOD: preshared
+      OPENFGA_AUTHN_PRESHARED_KEYS: ${FGA_PRESHARED_KEY:?}
+      OPENFGA_PLAYGROUND_ENABLED: "false"
+    networks:
+      - backend
+    depends_on:
+      fga-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=localhost:8081"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  fga-migrate:
+    image: openfga/openfga:v1.22.1
+    command: migrate
+    environment: *fga-env
+    networks:
+      - backend
+    depends_on:
+      fga-db:
+        condition: service_healthy
+
+  fga-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: openfga
+      POSTGRES_USER: openfga
+      POSTGRES_PASSWORD: ${FGA_DB_PASSWORD:?}
+    volumes:
+      - fgadata:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openfga -d openfga"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
 networks:
   backend:
   waf:
@@ -33,3 +136,5 @@ networks:
 
 volumes:
   dbdata:
+  kcdata:
+  fgadata:
