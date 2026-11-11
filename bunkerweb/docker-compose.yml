@@ -31,6 +31,15 @@ services:
       # Keycloak (identity provider) op hetzelfde domein onder /auth
       - REVERSE_PROXY_URL_1=/auth
       - REVERSE_PROXY_HOST_1=http://unbreakable-keycloak-g08:8080
+      # De loginpagina's van Keycloak doen meerdere verzoeken per seconde naar dezelfde URL.
+      - LIMIT_REQ_URL_1=^/auth/
+      - LIMIT_REQ_RATE_1=30r/s
+      # BunkerWeb zet standaard HttpOnly op alle cookies. Deze twee moet Keycloak in de browser
+      # met JavaScript kunnen lezen (sessiecontrole), anders blijft de login in een lus hangen.
+      - COOKIE_FLAGS_1=KEYCLOAK_SESSION secure
+      - COOKIE_FLAGS_2=KC_AUTH_SESSION_HASH secure
+      # DELETE is nodig om een bericht te verwijderen (standaard enkel GET, POST en HEAD).
+      - ALLOWED_METHODS=GET|POST|HEAD|DELETE
       - AUTO_LETS_ENCRYPT=yes
       - EMAIL_LETS_ENCRYPT=soufiane.chaham@student.ap.be
       - USE_LETS_ENCRYPT_STAGING=no
