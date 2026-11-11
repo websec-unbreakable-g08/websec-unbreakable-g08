@@ -1,12 +1,20 @@
 networks:
   default:
     name: websec-unbreakable-g08_default
+  # Enkel voor de poorten naar buiten. Zonder IPv6 op het netwerk stuurt Docker IPv6-verkeer
+  # door via een proxy en ziet BunkerWeb elke bezoeker als hetzelfde interne adres.
+  edge:
+    enable_ipv4: false
+    enable_ipv6: true
 
 services:
   bunkerweb:
     image: bunkerity/bunkerweb:1.6.16
     container_name: bunkerweb
     restart: unless-stopped
+    networks:
+      - default
+      - edge
     ports:
       - "[::]:80:8080/tcp"
       - "[::]:443:8443/tcp"
@@ -25,6 +33,8 @@ services:
       - BUNKERWEB_INSTANCES=bunkerweb
       - API_WHITELIST_IP=127.0.0.1 172.0.0.0/8
       - SERVER_NAME=g08.ipv6.thelastgym.be
+      # Het verkeer komt nu rechtstreeks over IPv6 binnen (zie netwerk edge).
+      - USE_IPV6=yes
       - USE_REVERSE_PROXY=yes
       - REVERSE_PROXY_URL=/
       - REVERSE_PROXY_HOST=http://unbreakable-app-g08:8080
