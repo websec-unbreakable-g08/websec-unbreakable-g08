@@ -73,9 +73,21 @@ app.UseAuthorization();
 
 // De SPA: index.html, JavaScript en CSS uit wwwroot.
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // De browser moet bij elke aanvraag nagaan of een bestand gewijzigd is (ETag). Anders blijft hij
+    // na een update een oude versie van de SPA gebruiken, bijvoorbeeld een api.js zonder token.
+    OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache"
+});
 
 app.MapGet("/health", () => "ok");
+
+// Wat de SPA nodig heeft om bij Keycloak in te loggen. Geen geheimen: de SPA is een public client.
+app.MapGet("/config", (IConfiguration configuration) => Results.Json(new
+{
+    issuer = configuration["Oidc:Issuer"],
+    clientId = configuration["Oidc:ClientId"]
+}));
 
 // De API. Wie je bent, staat in het token van Keycloak (claim preferred_username).
 var api = app.MapGroup("/api")
@@ -115,7 +127,7 @@ api.MapGet("/messages/search", async (ClaimsPrincipal principal, HttpRequest req
     return Results.Ok(messages);
 });
 
-api.MapGet("/messages/export", async (ClaimsPrincipal principal, HttpRequest request, UnbreakableContext db) =>
+api.MapGet("/messages/export", async (ClaimsPrincipal principal, UnbreakableContext db) =>
 {
     var user = principal.Identity.Name;
 

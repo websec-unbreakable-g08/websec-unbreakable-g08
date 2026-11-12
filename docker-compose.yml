@@ -10,6 +10,7 @@ services:
       Oidc__Issuer: ${KC_PUBLIC_URL:?}/realms/unbreakable
       Oidc__MetadataAddress: http://keycloak:8080/auth/realms/unbreakable/.well-known/openid-configuration
       Oidc__Audience: unbreakable-api
+      Oidc__ClientId: unbreakable-spa
     networks:
       - backend
       - waf
