@@ -82,6 +82,17 @@ public class Fga
             Object = "message:" + messageId
         })).Allowed == true);
 
+    // De id's van alle berichten die deze gebruiker mag lezen.
+    // shortcut: OpenFGA geeft er standaard hoogstens 1000 terug; ga over op de streaming-variant
+    // (of paginering in de API) zodra een inbox zo groot kan worden.
+    public Task<List<int>> ReadableAsync(string user) => Ask(async () =>
+        (await _client.ListObjects(new ClientListObjectsRequest
+        {
+            User = "user:" + user,
+            Relation = "can_read",
+            Type = "message"
+        })).Objects.Select(o => int.Parse(o["message:".Length..])).ToList());
+
     public Task AddAsync(Message message) => Ask(() =>
         _client.Write(new ClientWriteRequest { Writes = Tuples(message) }));
 

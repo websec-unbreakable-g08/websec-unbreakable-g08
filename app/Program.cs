@@ -122,11 +122,13 @@ api.MapGet("/users", async (UnbreakableContext db) =>
     return Results.Ok(senders.Union(recipients).OrderBy(name => name).ToList());
 });
 
-api.MapGet("/messages", async (ClaimsPrincipal principal, HttpRequest request, UnbreakableContext db) =>
+// Inbox, zoeken en export: OpenFGA zegt welke berichten deze gebruiker mag lezen, de databank
+// levert enkel die berichten. De API beslist zelf niet wie wat mag zien.
+api.MapGet("/messages", async (ClaimsPrincipal principal, HttpRequest request, Fga fga, UnbreakableContext db) =>
 {
-    var user = principal.Identity.Name;
+    var readable = await fga.ReadableAsync(principal.Identity.Name);
 
-    var inbox = db.Messages.Where(m => m.Recipient == user);
+    var inbox = db.Messages.Where(m => readable.Contains(m.Id));
 
     var from = request.Query["from"].ToString();
     if (!string.IsNullOrEmpty(from))
@@ -137,24 +139,27 @@ api.MapGet("/messages", async (ClaimsPrincipal principal, HttpRequest request, U
     return Results.Ok(await inbox.OrderByDescending(m => m.SentAt).ToListAsync());
 });
 
-api.MapGet("/messages/search", async (ClaimsPrincipal principal, HttpRequest request, UnbreakableContext db) =>
+api.MapGet("/messages/search", async (ClaimsPrincipal principal, HttpRequest request, Fga fga, UnbreakableContext db) =>
 {
-    var user = principal.Identity.Name;
+    var readable = await fga.ReadableAsync(principal.Identity.Name);
 
     var q = request.Query["q"].ToString();
-    var sql = "SELECT * FROM \"Messages\" WHERE \"Recipient\" = '" + user + "' " +
-              "AND (\"Subject\" ILIKE '%" + q + "%' OR \"Body\" ILIKE '%" + q + "%')";
+    var sql = "SELECT * FROM \"Messages\" " +
+              "WHERE (\"Subject\" ILIKE '%" + q + "%' OR \"Body\" ILIKE '%" + q + "%')";
 
-    var messages = await db.Messages.FromSqlRaw(sql).OrderByDescending(m => m.SentAt).ToListAsync();
+    var messages = await db.Messages.FromSqlRaw(sql)
+        .Where(m => readable.Contains(m.Id))
+        .OrderByDescending(m => m.SentAt)
+        .ToListAsync();
     return Results.Ok(messages);
 });
 
-api.MapGet("/messages/export", async (ClaimsPrincipal principal, UnbreakableContext db) =>
+api.MapGet("/messages/export", async (ClaimsPrincipal principal, Fga fga, UnbreakableContext db) =>
 {
-    var user = principal.Identity.Name;
+    var readable = await fga.ReadableAsync(principal.Identity.Name);
 
     var messages = await db.Messages
-        .Where(m => m.Recipient == user)
+        .Where(m => readable.Contains(m.Id))
         .OrderBy(m => m.SentAt)
         .ToListAsync();
 
