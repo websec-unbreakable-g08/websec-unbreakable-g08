@@ -1,4 +1,7 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
 using Unbreakable.Data;
 using Unbreakable.Models;
@@ -10,6 +13,28 @@ builder.Services.AddDbContext<UnbreakableContext>(options =>
 
 builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
+
+// Inloggen gebeurt bij Keycloak. De API aanvaardt enkel een access token dat Keycloak met RS256
+// ondertekende voor deze API: handtekening, issuer, audience en geldigheid worden gecontroleerd.
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+{
+    var oidc = builder.Configuration.GetSection("Oidc");
+
+    // De sleutels (JWKS) haalt de API op via het interne netwerk, daarom http.
+    // De issuer in het token is de publieke URL van Keycloak.
+    options.MetadataAddress = oidc["MetadataAddress"];
+    options.RequireHttpsMetadata = false;
+    options.MapInboundClaims = false;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidIssuer = oidc["Issuer"],
+        ValidAudience = oidc["Audience"],
+        ValidAlgorithms = new[] { SecurityAlgorithms.RsaSha256 },
+        NameClaimType = "preferred_username",
+        ClockSkew = TimeSpan.FromSeconds(30)
+    };
+});
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
@@ -26,6 +51,11 @@ using (var scope = app.Services.CreateScope())
         {
             context.Database.EnsureCreated();
             SeedData.Initialize(context);
+
+            // Eenmalig: Keycloak kent gebruikersnamen enkel in kleine letters, oudere berichten hadden "Anna".
+            context.Database.ExecuteSqlRaw(
+                "UPDATE \"Messages\" SET \"Sender\" = lower(\"Sender\"), \"Recipient\" = lower(\"Recipient\") " +
+                "WHERE \"Sender\" <> lower(\"Sender\") OR \"Recipient\" <> lower(\"Recipient\")");
             break;
         }
         catch (Exception ex) when (attempt < 30)
@@ -38,6 +68,8 @@ using (var scope = app.Services.CreateScope())
 
 app.UseDeveloperExceptionPage();
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 
 // De SPA: index.html, JavaScript en CSS uit wwwroot.
 app.UseDefaultFiles();
@@ -45,8 +77,9 @@ app.UseStaticFiles();
 
 app.MapGet("/health", () => "ok");
 
-// De API. Wie je bent, staat voorlopig in de header X-User.
-var api = app.MapGroup("/api");
+// De API. Wie je bent, staat in het token van Keycloak (claim preferred_username).
+var api = app.MapGroup("/api")
+    .RequireAuthorization(policy => policy.RequireAuthenticatedUser().RequireClaim("preferred_username"));
 
 api.MapGet("/users", async (UnbreakableContext db) =>
 {
@@ -55,13 +88,9 @@ api.MapGet("/users", async (UnbreakableContext db) =>
     return Results.Ok(senders.Union(recipients).OrderBy(name => name).ToList());
 });
 
-api.MapGet("/messages", async (HttpRequest request, UnbreakableContext db) =>
+api.MapGet("/messages", async (ClaimsPrincipal principal, HttpRequest request, UnbreakableContext db) =>
 {
-    var user = CurrentUser(request);
-    if (string.IsNullOrEmpty(user))
-    {
-        return Results.Unauthorized();
-    }
+    var user = principal.Identity.Name;
 
     var inbox = db.Messages.Where(m => m.Recipient == user);
 
@@ -74,13 +103,9 @@ api.MapGet("/messages", async (HttpRequest request, UnbreakableContext db) =>
     return Results.Ok(await inbox.OrderByDescending(m => m.SentAt).ToListAsync());
 });
 
-api.MapGet("/messages/search", async (HttpRequest request, UnbreakableContext db) =>
+api.MapGet("/messages/search", async (ClaimsPrincipal principal, HttpRequest request, UnbreakableContext db) =>
 {
-    var user = CurrentUser(request);
-    if (string.IsNullOrEmpty(user))
-    {
-        return Results.Unauthorized();
-    }
+    var user = principal.Identity.Name;
 
     var q = request.Query["q"].ToString();
     var sql = "SELECT * FROM \"Messages\" WHERE \"Recipient\" = '" + user + "' " +
@@ -90,13 +115,9 @@ api.MapGet("/messages/search", async (HttpRequest request, UnbreakableContext db
     return Results.Ok(messages);
 });
 
-api.MapGet("/messages/export", async (HttpRequest request, UnbreakableContext db) =>
+api.MapGet("/messages/export", async (ClaimsPrincipal principal, HttpRequest request, UnbreakableContext db) =>
 {
-    var user = CurrentUser(request);
-    if (string.IsNullOrEmpty(user))
-    {
-        return Results.Unauthorized();
-    }
+    var user = principal.Identity.Name;
 
     var messages = await db.Messages
         .Where(m => m.Recipient == user)
@@ -112,14 +133,16 @@ api.MapGet("/messages/{id:int}", async (int id, UnbreakableContext db) =>
     return message == null ? Results.NotFound() : Results.Ok(message);
 });
 
-api.MapPost("/messages", async (Message message, HttpRequest request, UnbreakableContext db) =>
+api.MapPost("/messages", async (Message message, ClaimsPrincipal principal, UnbreakableContext db) =>
 {
-    // Geen afzender meegegeven? Dan nemen we wie je bent.
-    if (string.IsNullOrEmpty(message.Sender))
+    if (string.IsNullOrWhiteSpace(message.Recipient))
     {
-        message.Sender = CurrentUser(request);
+        return Results.BadRequest("Ontvanger ontbreekt.");
     }
 
+    // De afzender komt uit het token, nooit uit wat de client meestuurt.
+    message.Sender = principal.Identity.Name;
+    message.Recipient = message.Recipient.Trim().ToLowerInvariant();
     message.Id = 0;
     message.SentAt = DateTime.UtcNow;
 
@@ -143,8 +166,3 @@ api.MapDelete("/messages/{id:int}", async (int id, UnbreakableContext db) =>
 });
 
 app.Run();
-
-static string CurrentUser(HttpRequest request)
-{
-    return request.Headers["X-User"].ToString();
-}

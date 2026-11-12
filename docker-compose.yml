@@ -6,6 +6,10 @@ services:
       - "8080"
     environment:
       ConnectionStrings__Unbreakable: "Host=db;Port=5432;Database=unbreakable;Username=unbreakable;Password=Unbr3akable!2026"
+      # Controle van het access token: issuer = publieke URL, sleutels via het interne netwerk.
+      Oidc__Issuer: ${KC_PUBLIC_URL:?}/realms/unbreakable
+      Oidc__MetadataAddress: http://keycloak:8080/auth/realms/unbreakable/.well-known/openid-configuration
+      Oidc__Audience: unbreakable-api
     networks:
       - backend
       - waf
