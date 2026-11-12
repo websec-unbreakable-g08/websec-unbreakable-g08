@@ -190,8 +190,12 @@ async function renderMessage(id) {
 
     document.getElementById('delete').addEventListener('click', async () => {
         if (confirm('Ben je zeker dat je dit bericht wil verwijderen?')) {
-            await api.remove(id);
-            location.hash = '#/inbox';
+            try {
+                await api.remove(id);
+                location.hash = '#/inbox';
+            } catch {
+                alert('Verwijderen is niet gelukt. Enkel de afzender mag een bericht verwijderen.');
+            }
         }
     });
 }

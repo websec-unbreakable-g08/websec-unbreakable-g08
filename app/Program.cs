@@ -1,8 +1,10 @@
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
+using Unbreakable;
 using Unbreakable.Data;
 using Unbreakable.Models;
 
@@ -35,11 +37,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     };
 });
 builder.Services.AddAuthorization();
+builder.Services.AddSingleton<Fga>();
 
 var app = builder.Build();
 
-// Databank aanmaken en vullen met voorbeeldberichten.
-// De databank kan iets later opstarten dan de app, dus we proberen een paar keer.
+// Databank aanmaken en vullen met voorbeeldberichten, en OpenFGA klaarzetten.
+// Die kunnen iets later opstarten dan de app, dus we proberen een paar keer. Lukt het niet,
+// dan stopt de app: zonder OpenFGA mag ze geen berichten tonen.
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<UnbreakableContext>();
@@ -56,11 +60,15 @@ using (var scope = app.Services.CreateScope())
             context.Database.ExecuteSqlRaw(
                 "UPDATE \"Messages\" SET \"Sender\" = lower(\"Sender\"), \"Recipient\" = lower(\"Recipient\") " +
                 "WHERE \"Sender\" <> lower(\"Sender\") OR \"Recipient\" <> lower(\"Recipient\")");
+
+            app.Services.GetRequiredService<Fga>()
+                .InitializeAsync(app.Configuration["OpenFga:ModelPath"], context.Messages.AsNoTracking().ToList())
+                .GetAwaiter().GetResult();
             break;
         }
         catch (Exception ex) when (attempt < 30)
         {
-            logger.LogWarning("Databank nog niet bereikbaar ({Error}), poging {Attempt}", ex.Message, attempt);
+            logger.LogWarning("Databank of OpenFGA nog niet bereikbaar ({Error}), poging {Attempt}", ex.Message, attempt);
             Thread.Sleep(2000);
         }
     }
@@ -92,6 +100,20 @@ app.MapGet("/config", (IConfiguration configuration) => Results.Json(new
 // De API. Wie je bent, staat in het token van Keycloak (claim preferred_username).
 var api = app.MapGroup("/api")
     .RequireAuthorization(policy => policy.RequireAuthenticatedUser().RequireClaim("preferred_username"));
+
+// Fail closed: geeft OpenFGA geen antwoord, dan weigert de API in plaats van te gokken.
+api.AddEndpointFilter(async (context, next) =>
+{
+    try
+    {
+        return await next(context);
+    }
+    catch (FgaUnavailableException error)
+    {
+        app.Logger.LogError(error, "OpenFGA gaf geen antwoord, aanvraag geweigerd");
+        return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    }
+});
 
 api.MapGet("/users", async (UnbreakableContext db) =>
 {
@@ -139,33 +161,56 @@ api.MapGet("/messages/export", async (ClaimsPrincipal principal, UnbreakableCont
     return Results.Text(JsonConvert.SerializeObject(messages, Formatting.Indented), "application/json");
 });
 
-api.MapGet("/messages/{id:int}", async (int id, UnbreakableContext db) =>
+// Niet toegestaan en onbestaand geven hetzelfde antwoord: zo verklapt de API niet welke berichten bestaan.
+api.MapGet("/messages/{id:int}", async (int id, ClaimsPrincipal principal, Fga fga, UnbreakableContext db) =>
 {
+    if (!await fga.CanAsync(principal.Identity.Name, "can_read", id))
+    {
+        return Results.NotFound();
+    }
+
     var message = await db.Messages.FindAsync(id);
     return message == null ? Results.NotFound() : Results.Ok(message);
 });
 
-api.MapPost("/messages", async (Message message, ClaimsPrincipal principal, UnbreakableContext db) =>
+api.MapPost("/messages", async (Message message, ClaimsPrincipal principal, Fga fga, UnbreakableContext db) =>
 {
-    if (string.IsNullOrWhiteSpace(message.Recipient))
-    {
-        return Results.BadRequest("Ontvanger ontbreekt.");
-    }
-
     // De afzender komt uit het token, nooit uit wat de client meestuurt.
     message.Sender = principal.Identity.Name;
-    message.Recipient = message.Recipient.Trim().ToLowerInvariant();
+    message.Recipient = message.Recipient?.Trim().ToLowerInvariant() ?? "";
+    if (!Regex.IsMatch(message.Recipient, "^[a-z0-9._-]{2,40}$"))
+    {
+        return Results.BadRequest("Ongeldige ontvanger.");
+    }
+
     message.Id = 0;
     message.SentAt = DateTime.UtcNow;
 
     db.Messages.Add(message);
     await db.SaveChangesAsync();
 
+    // Wie afzender en ontvanger is, staat vanaf nu in OpenFGA. Lukt dat niet, dan bestaat het bericht niet.
+    try
+    {
+        await fga.AddAsync(message);
+    }
+    catch (FgaUnavailableException)
+    {
+        db.Messages.Remove(message);
+        await db.SaveChangesAsync();
+        throw;
+    }
+
     return Results.Created($"/api/messages/{message.Id}", message);
 });
 
-api.MapDelete("/messages/{id:int}", async (int id, UnbreakableContext db) =>
+api.MapDelete("/messages/{id:int}", async (int id, ClaimsPrincipal principal, Fga fga, UnbreakableContext db) =>
 {
+    if (!await fga.CanAsync(principal.Identity.Name, "can_delete", id))
+    {
+        return Results.NotFound();
+    }
+
     var message = await db.Messages.FindAsync(id);
     if (message == null)
     {
@@ -174,6 +219,7 @@ api.MapDelete("/messages/{id:int}", async (int id, UnbreakableContext db) =>
 
     db.Messages.Remove(message);
     await db.SaveChangesAsync();
+    await fga.RemoveAsync(message);
     return Results.NoContent();
 });
 

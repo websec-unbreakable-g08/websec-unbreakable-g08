@@ -11,11 +11,20 @@ services:
       Oidc__MetadataAddress: http://keycloak:8080/auth/realms/unbreakable/.well-known/openid-configuration
       Oidc__Audience: unbreakable-api
       Oidc__ClientId: unbreakable-spa
+      # OpenFGA beslist wie een bericht mag lezen of verwijderen.
+      OpenFga__ApiUrl: http://openfga:8080
+      OpenFga__ApiKey: ${FGA_PRESHARED_KEY:?}
+      OpenFga__ModelPath: /app/openfga/model.json
+    volumes:
+      - ./openfga/model.json:/app/openfga/model.json:ro
     networks:
       - backend
       - waf
     depends_on:
-      - db
+      db:
+        condition: service_started
+      openfga:
+        condition: service_healthy
     restart: unless-stopped
 
   db:
