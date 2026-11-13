@@ -64,7 +64,58 @@ docs/threat-model.md        basis threat model van de starter app
 
 Alles onder `/api` vraagt een access token van Keycloak in de header `Authorization: Bearer <token>`. De API controleert de handtekening (RS256), de issuer, de audience `unbreakable-api` en de geldigheid, en leest wie je bent uit de claim `preferred_username`. Zonder geldig token krijg je `401`.
 
-Technologie: ASP.NET Core minimal API op .NET 10, Entity Framework Core met PostgreSQL 17, en vanilla JavaScript met Bootstrap, zonder build stap.
+Wat je met een bericht mag, beslist OpenFGA aan de hand van `openfga/model.json`: de ontvanger mag het lezen (`can_read`), de afzender mag het verwijderen (`can_delete`). De API vraagt het bij elke aanvraag en beslist zelf niets. Mag het niet, dan krijg je `404`, net als bij een bericht dat niet bestaat. Geeft OpenFGA geen antwoord, dan krijg je `503`.
+
+Technologie: ASP.NET Core minimal API op .NET 10, Entity Framework Core met PostgreSQL 17, Keycloak, OpenFGA, en vanilla JavaScript met Bootstrap, zonder build stap.
+
+### Testen met curl
+
+Een access token haal je op met het testscript. Het logt in bij Keycloak zoals de SPA dat doet, met het wachtwoord uit je `.env`:
+
+```bash
+ANNA=$(python3 .github/scripts/security_tests.py --token anna)
+BRAM=$(python3 .github/scripts/security_tests.py --token bram)
+CHRIS=$(python3 .github/scripts/security_tests.py --token chris)
+API=http://localhost:8080/api
+```
+
+Zonder geldig token kom je er niet in:
+
+```bash
+curl -i $API/messages                                # 401, geen token
+curl -i -H "X-User: anna" $API/messages              # 401, de oude header telt niet meer
+curl -i -H "Authorization: Bearer abc" $API/messages # 401, geen geldig token
+```
+
+Met een token zie je enkel je eigen berichten:
+
+```bash
+curl -s -H "Authorization: Bearer $ANNA" $API/messages                    # de inbox van anna
+curl -s -H "Authorization: Bearer $ANNA" "$API/messages/search?q=welkom"  # zoeken in die inbox
+curl -s -H "Authorization: Bearer $ANNA" $API/messages/export             # dezelfde berichten als JSON
+```
+
+Anna stuurt een bericht aan bram. De afzender komt uit het token, wat je in `sender` zet telt niet:
+
+```bash
+curl -s -X POST $API/messages -H "Authorization: Bearer $ANNA" -H "Content-Type: application/json" \
+  -d '{"sender": "chris", "recipient": "bram", "subject": "test", "body": "hallo"}'
+# {"id": 12, "sender": "anna", "recipient": "bram", ...}   onthoud het id
+ID=12
+```
+
+Enkel de ontvanger mag het lezen, enkel de afzender mag het verwijderen:
+
+```bash
+curl -i -H "Authorization: Bearer $BRAM"  $API/messages/$ID            # 200, bram is de ontvanger
+curl -i -H "Authorization: Bearer $CHRIS" $API/messages/$ID            # 404, chris heeft er niets mee te maken
+curl -i -X DELETE $API/messages/$ID                                    # 401, geen token
+curl -i -X DELETE -H "Authorization: Bearer $CHRIS" $API/messages/$ID  # 404, niet van chris
+curl -i -X DELETE -H "Authorization: Bearer $BRAM"  $API/messages/$ID  # 404, bram is ontvanger, geen afzender
+curl -i -X DELETE -H "Authorization: Bearer $ANNA"  $API/messages/$ID  # 204, anna is de afzender
+```
+
+Dezelfde controles lopen bij elke push in de pipeline: `python3 .github/scripts/security_tests.py` geeft `0 bevinding(en)` als alles geweigerd wordt wat geweigerd moet worden.
 
 ## Herkomst
 
