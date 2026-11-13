@@ -91,8 +91,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def login(oidc, redirect_uri, user, password):
     """Authorization code flow met PKCE. Geeft het access token terug."""
+    # Keycloak zet zijn cookies ook op http://localhost als Secure, omdat browsers localhost als
+    # veilig beschouwen. Python stuurt Secure-cookies standaard enkel over https terug; voor
+    # localhost (lokaal en in de pipeline) doen we hier wat een browser doet.
+    local = urllib.parse.urlparse(oidc["issuer"]).hostname in ("localhost", "127.0.0.1", "::1")
+    policy = http.cookiejar.DefaultCookiePolicy(secure_protocols=("https", "wss") + (("http",) if local else ()))
     opener = urllib.request.build_opener(
-        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()), NoRedirect)
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar(policy)), NoRedirect)
     endpoint = oidc["issuer"] + "/protocol/openid-connect/"
     verifier = b64url(secrets.token_bytes(32))
     state = secrets.token_urlsafe(8)
@@ -112,9 +117,11 @@ def login(oidc, redirect_uri, user, password):
             opener.open(html.unescape(form.group(1)), data=credentials, timeout=15)
             fail_closed(f"Inloggen als {user} mislukt: Keycloak stuurde niet terug naar de app")
         except urllib.error.HTTPError as redirect:
-            answer = urllib.parse.parse_qs(urllib.parse.urlparse(redirect.headers.get("Location", "")).query)
+            target = urllib.parse.urlparse(redirect.headers.get("Location", ""))
+            answer = urllib.parse.parse_qs(target.query)
         if answer.get("state") != [state] or "code" not in answer:
-            fail_closed(f"Inloggen als {user} mislukt: geen code in het antwoord van Keycloak")
+            fail_closed(f"Inloggen als {user} mislukt: geen code in het antwoord van Keycloak "
+                        f"(HTTP {redirect.code}, doorverwezen naar '{target.path}')")
         body = urllib.parse.urlencode({
             "grant_type": "authorization_code", "client_id": oidc["clientId"],
             "code": answer["code"][0], "redirect_uri": redirect_uri, "code_verifier": verifier,
