@@ -63,6 +63,13 @@
     "reason": "POSTGRES_PASSWORD in docker-compose.yml. Starter app gebruikt dit voor lokale ontwikkeling. In productie moeten secrets via Docker secrets worden ingegeven. Oplossing later."
   },
   {
+    "tool": "secrets",
+    "id": "46c03b5c7f9a23fc499bf97c6ab517b579b802bf:.github/scripts/security_tests.py:connection-string-password:232",
+    "file": ".github/scripts/security_tests.py",
+    "verdict": "false-positive",
+    "reason": "Geen geheim: de regel was Python-code die een wachtwoord uit het .env-bestand las (password = env.get(...)). Onze eigen regel voor connection strings sloeg aan op het woord password gevolgd door een toekenning. De code is intussen herschreven zonder die toekenning, maar de commit blijft in de geschiedenis staan."
+  },
+  {
     "tool": "container",
     "id": "DS-0002",
     "file": "app/Dockerfile",

@@ -236,10 +236,10 @@ def main():
     wait_ready(oidc["issuer"] + "/.well-known/openid-configuration", "Keycloak")
 
     def token_for(user):
-        password = env.get(user.upper() + "_PASSWORD")
-        if not password or "APP_URL" not in env:
-            fail_closed(f"APP_URL of {user.upper()}_PASSWORD ontbreekt in {args.env_file}")
-        return login(oidc, env["APP_URL"].rstrip("/") + "/", user, password)
+        key = user.upper() + "_PASSWORD"
+        if "APP_URL" not in env or not env.get(key):
+            fail_closed(f"APP_URL of {key} ontbreekt in {args.env_file}")
+        return login(oidc, env["APP_URL"].rstrip("/") + "/", user, env[key])
 
     if args.token:
         print(token_for(args.token))
