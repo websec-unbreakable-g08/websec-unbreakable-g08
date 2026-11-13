@@ -1,0 +1,74 @@
+{
+  "realm": "unbreakable",
+  "displayName": "Unbreakable",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "clients": [
+    {
+      "clientId": "unbreakable-spa",
+      "name": "Unbreakable SPA",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "redirectUris": ["${APP_URL}/"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${APP_URL}/"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-unbreakable-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "unbreakable-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "anna",
+      "enabled": true,
+      "firstName": "Anna",
+      "lastName": "Unbreakable",
+      "email": "anna@unbreakable.example",
+      "emailVerified": true,
+      "realmRoles": ["default-roles-unbreakable"],
+      "credentials": [{ "type": "password", "value": "${ANNA_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "bram",
+      "enabled": true,
+      "firstName": "Bram",
+      "lastName": "Unbreakable",
+      "email": "bram@unbreakable.example",
+      "emailVerified": true,
+      "realmRoles": ["default-roles-unbreakable"],
+      "credentials": [{ "type": "password", "value": "${BRAM_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "chris",
+      "enabled": true,
+      "firstName": "Chris",
+      "lastName": "Unbreakable",
+      "email": "chris@unbreakable.example",
+      "emailVerified": true,
+      "realmRoles": ["default-roles-unbreakable"],
+      "credentials": [{ "type": "password", "value": "${CHRIS_PASSWORD}", "temporary": false }]
+    }
+  ]
+}

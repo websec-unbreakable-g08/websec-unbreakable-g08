@@ -1,6 +1,7 @@
 // De schermen van Unbreakable. Navigeren gebeurt met het deel na # in de URL.
 
-import { api, currentUser, setUser } from './api.js';
+import { api } from './api.js';
+import { init, login, logout, currentUser } from './auth.js';
 import { sealMessage, openMessage, parsePayload, IntegrityError } from './crypto.js';
 
 const app = document.getElementById('app');
@@ -23,11 +24,15 @@ function formatDate(value) {
 function showWho() {
     const user = currentUser();
     document.getElementById('who').innerHTML = user
-        ? `Je bent <strong>${escapeHtml(user)}</strong> (<a href="#/">wisselen</a>)`
+        ? `Je bent <strong>${escapeHtml(user)}</strong> (<a href="#" id="logout">uitloggen</a>)`
         : '';
+    document.getElementById('logout')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        logout();
+    });
 }
 
-// ------------------------------------------------------------------ naam kiezen
+// ------------------------------------------------------------------ startpagina
 
 function renderLogin() {
     const user = currentUser();
@@ -36,27 +41,13 @@ function renderLogin() {
             <h1 class="display-4">Unbreakable</h1>
             <p class="lead">Berichten die niemand anders kan lezen. Dat is toch de bedoeling.</p>
         </div>
-        <div class="row justify-content-center">
-            <div class="col-md-5">
-                ${user ? `<p>Je gebruikt Unbreakable als <strong>${escapeHtml(user)}</strong>.
-                          <a href="#/inbox">Naar je inbox</a></p>
-                          <p>Iemand anders? Vul hieronder een andere naam in.</p>` : ''}
-                <form id="login">
-                    <div class="form-group">
-                        <label for="name">Wie ben je?</label>
-                        <input id="name" class="form-control" placeholder="bijvoorbeeld Anna"
-                               required minlength="2" maxlength="40" />
-                    </div>
-                    <button type="submit" class="btn btn-primary">Verder</button>
-                </form>
-            </div>
+        <div class="text-center">
+            ${user
+                ? `<p>Je bent ingelogd als <strong>${escapeHtml(user)}</strong>. <a href="#/inbox">Naar je inbox</a></p>`
+                : '<button id="login" class="btn btn-primary">Inloggen</button>'}
         </div>`;
 
-    document.getElementById('login').addEventListener('submit', (event) => {
-        event.preventDefault();
-        setUser(document.getElementById('name').value.trim());
-        location.hash = '#/inbox';
-    });
+    document.getElementById('login')?.addEventListener('click', () => login());
 }
 
 // ------------------------------------------------------------------ inbox
@@ -199,8 +190,12 @@ async function renderMessage(id) {
 
     document.getElementById('delete').addEventListener('click', async () => {
         if (confirm('Ben je zeker dat je dit bericht wil verwijderen?')) {
-            await api.remove(id);
-            location.hash = '#/inbox';
+            try {
+                await api.remove(id);
+                location.hash = '#/inbox';
+            } catch {
+                alert('Verwijderen is niet gelukt. Enkel de afzender mag een bericht verwijderen.');
+            }
         }
     });
 }
@@ -300,8 +295,7 @@ async function route() {
             return renderAbout();
         }
         if (!currentUser()) {
-            location.hash = '#/';
-            return;
+            return await login();
         }
         if (path === '/inbox') {
             return await renderInbox(params);
@@ -320,4 +314,9 @@ async function route() {
 }
 
 window.addEventListener('hashchange', route);
-route();
+init().then(route, (error) => {
+    showWho();
+    app.innerHTML = `<div class="alert alert-danger">${escapeHtml(error.message)}</div>
+        <button id="login" class="btn btn-primary">Opnieuw inloggen</button>`;
+    document.getElementById('login').addEventListener('click', () => login());
+});

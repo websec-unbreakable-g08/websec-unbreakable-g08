@@ -1,17 +1,16 @@
 // Praat met de API. Alles wat de SPA weet, komt van hier.
+// Elke aanvraag draagt het access token van Keycloak mee; wie je bent, bepaalt de API uit dat token.
 
-const USER_KEY = 'unbreakable_user';
-
-export function currentUser() {
-    return localStorage.getItem(USER_KEY);
-}
-
-export function setUser(name) {
-    localStorage.setItem(USER_KEY, name);
-}
+import { accessToken, login } from './auth.js';
 
 async function call(method, path, body) {
-    const headers = { 'X-User': currentUser() || '' };
+    const token = await accessToken();
+    if (!token) {
+        await login();
+        throw new Error('Je wordt doorgestuurd om in te loggen.');
+    }
+
+    const headers = { Authorization: 'Bearer ' + token };
     const options = { method, headers };
 
     if (body !== undefined) {
@@ -20,6 +19,10 @@ async function call(method, path, body) {
     }
 
     const response = await fetch('/api' + path, options);
+    if (response.status === 401) {
+        await login();
+        throw new Error('Je sessie is verlopen, je wordt doorgestuurd om opnieuw in te loggen.');
+    }
     if (!response.ok) {
         throw new Error(`${method} ${path} gaf ${response.status}`);
     }

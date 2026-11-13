@@ -16,40 +16,40 @@ public static class SeedData
         context.Messages.AddRange(
             new Message
             {
-                Sender = "Bram",
-                Recipient = "Anna",
+                Sender = "bram",
+                Recipient = "anna",
                 Subject = "Welkom bij Unbreakable",
                 Body = "Hoi Anna, vanaf nu sturen we alles via Unbreakable. Niemand anders kan meelezen.",
                 SentAt = now.AddDays(-3)
             },
             new Message
             {
-                Sender = "Anna",
-                Recipient = "Bram",
+                Sender = "anna",
+                Recipient = "bram",
                 Subject = "Re: Welkom bij Unbreakable",
                 Body = "Top! Is dat echt zo? Wie heeft dat gecontroleerd?",
                 SentAt = now.AddDays(-3).AddHours(2)
             },
             new Message
             {
-                Sender = "Chris",
-                Recipient = "Anna",
+                Sender = "chris",
+                Recipient = "anna",
                 Subject = "Afspraak vrijdag",
                 Body = "Zien we elkaar vrijdag om 14 uur aan het station?",
                 SentAt = now.AddDays(-1)
             },
             new Message
             {
-                Sender = "Bram",
-                Recipient = "Chris",
+                Sender = "bram",
+                Recipient = "chris",
                 Subject = "Wachtwoord van de wifi",
                 Body = "Het wachtwoord van de wifi op kantoor is ZomerZon2026. Niet doorgeven!",
                 SentAt = now.AddHours(-5)
             },
             new Message
             {
-                Sender = "Anna",
-                Recipient = "Chris",
+                Sender = "anna",
+                Recipient = "chris",
                 Subject = "Vrijdag",
                 Body = "Prima, ik neem de documenten mee.",
                 SentAt = now.AddHours(-2)

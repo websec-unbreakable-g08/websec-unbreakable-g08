@@ -21,6 +21,9 @@ regex = '''(?i)POSTGRES_PASSWORD\s*[:=]\s*["']?([^"'\s]{4,})'''
 secretGroup = 1
 tags = ["docker", "postgres", "password"]
 entropy = 3.0
+# Een verwijzing naar een variabele uit .env (${NAAM:?}) is geen geheim.
+[[rules.allowlists]]
+regexes = ['''^\$\{[A-Z0-9_]+(:\?)?\}$''']
 
 [[rules]]
 id = "docker-compose-mysql-password"

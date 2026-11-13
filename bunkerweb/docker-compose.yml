@@ -1,12 +1,20 @@
 networks:
   default:
     name: websec-unbreakable-g08_default
+  # Enkel voor de poorten naar buiten. Zonder IPv6 op het netwerk stuurt Docker IPv6-verkeer
+  # door via een proxy en ziet BunkerWeb elke bezoeker als hetzelfde interne adres.
+  edge:
+    enable_ipv4: false
+    enable_ipv6: true
 
 services:
   bunkerweb:
     image: bunkerity/bunkerweb:1.6.16
     container_name: bunkerweb
     restart: unless-stopped
+    networks:
+      - default
+      - edge
     ports:
       - "[::]:80:8080/tcp"
       - "[::]:443:8443/tcp"
@@ -25,9 +33,23 @@ services:
       - BUNKERWEB_INSTANCES=bunkerweb
       - API_WHITELIST_IP=127.0.0.1 172.0.0.0/8
       - SERVER_NAME=g08.ipv6.thelastgym.be
+      # Het verkeer komt nu rechtstreeks over IPv6 binnen (zie netwerk edge).
+      - USE_IPV6=yes
       - USE_REVERSE_PROXY=yes
       - REVERSE_PROXY_URL=/
       - REVERSE_PROXY_HOST=http://unbreakable-app-g08:8080
+      # Keycloak (identity provider) op hetzelfde domein onder /auth
+      - REVERSE_PROXY_URL_1=/auth
+      - REVERSE_PROXY_HOST_1=http://unbreakable-keycloak-g08:8080
+      # De loginpagina's van Keycloak doen meerdere verzoeken per seconde naar dezelfde URL.
+      - LIMIT_REQ_URL_1=^/auth/
+      - LIMIT_REQ_RATE_1=30r/s
+      # BunkerWeb zet standaard HttpOnly op alle cookies. Deze twee moet Keycloak in de browser
+      # met JavaScript kunnen lezen (sessiecontrole), anders blijft de login in een lus hangen.
+      - COOKIE_FLAGS_1=KEYCLOAK_SESSION secure
+      - COOKIE_FLAGS_2=KC_AUTH_SESSION_HASH secure
+      # DELETE is nodig om een bericht te verwijderen (standaard enkel GET, POST en HEAD).
+      - ALLOWED_METHODS=GET|POST|HEAD|DELETE
       - AUTO_LETS_ENCRYPT=yes
       - EMAIL_LETS_ENCRYPT=soufiane.chaham@student.ap.be
       - USE_LETS_ENCRYPT_STAGING=no

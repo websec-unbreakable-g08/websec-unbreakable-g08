@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    { "type": "user" },
+    {
+      "type": "message",
+      "relations": {
+        "sender": { "this": {} },
+        "recipient": { "this": {} },
+        "can_read": { "computedUserset": { "relation": "recipient" } },
+        "can_delete": { "computedUserset": { "relation": "sender" } }
+      },
+      "metadata": {
+        "relations": {
+          "sender": { "directly_related_user_types": [{ "type": "user" }] },
+          "recipient": { "directly_related_user_types": [{ "type": "user" }] }
+        }
+      }
+    }
+  ]
+}
